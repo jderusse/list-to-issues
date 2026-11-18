@@ -38,10 +38,24 @@ hidden mark to every issue and comment. A retry looks for that mark before posti
 
 ## What a mirrored message looks like
 
-Each issue and comment starts with a header block. It gives the sender, the date, the
-Message-ID and the R2 key of the raw message. It also gives the SPF, DKIM and DMARC results of
-the receiving server. The address of the sender is where the replies go, so a failed or missing
-DMARC result is flagged.
+Each issue and comment starts with a YAML block that people can read and tools can parse:
+
+```yaml
+from:
+  name: "Rita Reporter"
+  email: "reporter@example.org"
+date: "2026-01-15T09:00:00.000Z"
+message_id: "CAF123@mail.example.org"
+raw_message: "raw/2026/01/<id>.eml"
+authentication:
+  spf: "pass"
+  dkim: "pass"
+  dmarc: "pass"
+```
+
+`raw_message` is the R2 key of the raw message, and `authentication` has the results of the
+receiving server. The address of the sender is where the replies go, so a failed or missing DMARC
+result is also flagged with a visible warning. An automatic message has `automatic: true`.
 
 Then comes the text of the message. In a reply, the quoted history and the footer of the list are
 removed, and the full text stays available in a collapsed block.
@@ -66,6 +80,7 @@ real permission of the commenter. Anybody else gets a 👎 and nothing happens.
 | --- | --- |
 | `/reply` | Emails the rest of the comment to the reporter. |
 | `/send <comment URL or id>` | Emails an existing comment of the same issue, whoever wrote it. The command comment contains nothing else. |
+| `/ack` | Emails the configured acknowledgment, as the first answer of a thread. Text below the command is added after it. |
 | `/reporter <address>[, <address>...]` | Changes who receives the emails of the thread. The first address is the reporter, the others are copied. |
 | `/attachments` | Answers with download links for the raw messages and the attachments that aren't shown. |
 | `/spam` | Closes the issue as not planned, labels it, and ignores the later messages of the thread. |
@@ -78,6 +93,11 @@ every comment of a permitted person to be emailed.
 
 `/send` exists for teams where a person drafts a reply as a plain comment, and somebody else
 sends the draft. A comment is sent once. A second `/send` of the same comment is refused.
+
+`/ack` sends the text of `ACK_TEMPLATE`, for example to say that the message was received and to
+ask the questions that every reporter gets. It only works while nothing was sent in the thread.
+The Worker then posts a comment with the text that it sent. It is a command on purpose, since an
+automatic reply would also answer spam.
 
 ### What the reporter receives
 
@@ -166,9 +186,19 @@ contain the name and the address of the reporter and of the people they copied.
 
 - New issues get `LABELS_NEW` (`via-email`), and `unthreaded` when a message refers to a parent
   that never showed up.
-- `LABEL_AWAITING_REPLY` (`needs-reply`) is added when the reporter, or somebody they copied,
-  writes. It is removed when an email is sent to them from GitHub. Set it to an empty string to
-  disable it.
+- The Worker knows who wrote last, so it keeps the status of each report up to date with labels:
+
+  | Status | Label setting | When |
+  | --- | --- | --- |
+  | To acknowledge | `LABEL_TO_ACKNOWLEDGE` | The reporter wrote, and nothing was sent to them yet |
+  | To reply | `LABEL_AWAITING_REPLY` (`needs-reply`) | The reporter wrote after an answer |
+  | Waiting for the reporter | `LABEL_AWAITING_REPORTER` | An email was sent to them from GitHub |
+
+  An issue has one of these labels at most. "The reporter" also means anybody they copied. By
+  default, only `LABEL_AWAITING_REPLY` is set. This label then also marks new reports, and it is
+  removed when an email is sent. Set a label to an empty string to disable its status.
+- The labels stay on a closed issue. A search on them lists every reporter who still waits for
+  an answer, for example after their report was closed as a duplicate.
 - When the reporter writes on a closed issue, the issue is reopened
   (`REOPEN_ON_REPORTER_MESSAGE`).
 - Automatic messages, like out-of-office replies, are mirrored and flagged. They never change
@@ -211,8 +241,11 @@ Settings are plain variables in the Wrangler configuration.
 | `FOOTER_PATTERN` | | Regular expression that matches the start of the list footer |
 | `LABELS_NEW` | `via-email` | Comma-separated labels of new issues |
 | `LABEL_AWAITING_REPLY` | `needs-reply` | Empty to disable |
+| `LABEL_TO_ACKNOWLEDGE`, `LABEL_AWAITING_REPORTER` | | The other statuses of a report, see Labels |
 | `LABEL_SPAM`, `LABEL_UNTHREADED` | `spam`, `unthreaded` | |
 | `REOPEN_ON_REPORTER_MESSAGE` | `true` | |
+| `ISSUE_TYPE` | | Issue type of new issues. The type must exist in the organization |
+| `ACK_TEMPLATE` | | Text that `/ack` sends, with `{commenter}` and `{label}` |
 | `ATTACHMENT_MAX_BYTES` | `262144` | Above this size, an attachment is listed instead of shown |
 | `DOWNLOAD_LINK_TTL_SECONDS` | `900` | |
 | `PUBLIC_BASE_URL` | | Base of download links. Defaults to the origin of the webhook URL |

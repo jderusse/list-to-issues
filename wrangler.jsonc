@@ -74,10 +74,18 @@
 		"SUBJECT_TAG": "[listname]",
 		"FOOTER_PATTERN": "",
 		"LABELS_NEW": "via-email",
+		// The three statuses of a report. Leave the first and the last one empty
+		// to only track the threads that need a reply.
+		"LABEL_TO_ACKNOWLEDGE": "",
 		"LABEL_AWAITING_REPLY": "needs-reply",
+		"LABEL_AWAITING_REPORTER": "",
 		"LABEL_SPAM": "spam",
 		"LABEL_UNTHREADED": "unthreaded",
 		"REOPEN_ON_REPORTER_MESSAGE": "true",
+		// Name of an issue type of the organization, for new issues
+		"ISSUE_TYPE": "",
+		// Text that "/ack" sends, with {commenter} and {label}
+		"ACK_TEMPLATE": "",
 
 		"ATTACHMENT_MAX_BYTES": "262144",
 		"DOWNLOAD_LINK_TTL_SECONDS": "900",
