@@ -83,6 +83,7 @@ real permission of the commenter. Anybody else gets a 👎 and nothing happens.
 | `/ack` | Emails the configured acknowledgment, as the first answer of a thread. Text below the command is added after it. |
 | `/reporter <address>[, <address>...]` | Changes who receives the emails of the thread. The first address is the reporter, the others are copied. |
 | `/attachments` | Answers with download links for the raw messages and the attachments that aren't shown. |
+| `/close` | Closes the issue and removes the labels that say somebody waits. The later messages of the thread are still mirrored. |
 | `/spam` | Closes the issue as not planned, labels it, and ignores the later messages of the thread. |
 
 The Worker reacts to the command comment with 🚀 once an email is sent, and with 👍 for the
@@ -141,6 +142,14 @@ come from the reporter of that thread, or from somebody the reporter had copied.
 `FORWARD_DIRECT_REPLIES`, the Worker also forwards it to the list. The list address must then be
 a verified destination address of your Cloudflare account.
 
+### Senders to ignore
+
+Some senders use the list for something else, like automated notices. List them in
+`IGNORE_SENDERS`, as addresses or as domains, which include their subdomains. Their messages are
+accepted and dropped: no issue, and no copy in R2. The replies to such a message are dropped too,
+whoever writes them. A message that an ignored sender writes in a mirrored thread is still
+mirrored.
+
 ### Start with the observe mode
 
 With `OBSERVE_MODE=true`, the Worker stores every message it receives under `observe/` in R2 and
@@ -197,8 +206,13 @@ contain the name and the address of the reporter and of the people they copied.
   An issue has one of these labels at most. "The reporter" also means anybody they copied. By
   default, only `LABEL_AWAITING_REPLY` is set. This label then also marks new reports, and it is
   removed when an email is sent. Set a label to an empty string to disable its status.
+- `LABEL_ANSWER_OWED` is for teams that owe a final answer to every reporter. The Worker puts
+  it on every new report and never removes it when an email is sent. A person removes it once the
+  final answer is sent, or `/close` and `/spam` do.
 - The labels stay on a closed issue. A search on them lists every reporter who still waits for
   an answer, for example after their report was closed as a duplicate.
+- `/close` is for threads that need nothing more, like a message that wasn't a report. Closing
+  an issue by hand keeps its labels.
 - When the reporter writes on a closed issue, the issue is reopened
   (`REOPEN_ON_REPORTER_MESSAGE`).
 - Automatic messages, like out-of-office replies, are mirrored and flagged. They never change
@@ -226,6 +240,7 @@ Settings are plain variables in the Wrangler configuration.
 | `LIST_ID`, `LIST_BOUNCE_PATTERN` | | For `list-headers`: the List-Id, and a regular expression for the envelope sender |
 | `ACCEPT_HEADER_CHECKS` | `[]` | For `secret-address`: JSON array of `{"name", "pattern"}` that must all match |
 | `OBSERVE_MODE` | `false` | Store everything, do nothing else |
+| `IGNORE_SENDERS` | | Comma-separated addresses and domains whose messages are dropped |
 | `SENDER_ADDRESS` | | Public From address of outbound emails. Receives direct replies |
 | `SENDER_NAME_TEMPLATE` | `{commenter} via {label}` | Display name of the sender |
 | `SENDER_LABEL` | | Value of `{label}` |
@@ -242,6 +257,7 @@ Settings are plain variables in the Wrangler configuration.
 | `LABELS_NEW` | `via-email` | Comma-separated labels of new issues |
 | `LABEL_AWAITING_REPLY` | `needs-reply` | Empty to disable |
 | `LABEL_TO_ACKNOWLEDGE`, `LABEL_AWAITING_REPORTER` | | The other statuses of a report, see Labels |
+| `LABEL_ANSWER_OWED` | | Put on every new report until somebody ends the thread, see Labels |
 | `LABEL_SPAM`, `LABEL_UNTHREADED` | `spam`, `unthreaded` | |
 | `REOPEN_ON_REPORTER_MESSAGE` | `true` | |
 | `ISSUE_TYPE` | | Issue type of new issues. The type must exist in the organization |

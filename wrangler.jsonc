@@ -56,6 +56,8 @@
 		// JSON array of { "name": "...", "pattern": "..." }, for the secret-address mode
 		"ACCEPT_HEADER_CHECKS": "[]",
 		"OBSERVE_MODE": "false",
+		// Comma-separated addresses and domains whose messages are dropped
+		"IGNORE_SENDERS": "",
 
 		"SENDER_ADDRESS": "list-bot@mail.example.com",
 		"SENDER_NAME_TEMPLATE": "{commenter} via {label}",
@@ -79,6 +81,8 @@
 		"LABEL_TO_ACKNOWLEDGE": "",
 		"LABEL_AWAITING_REPLY": "needs-reply",
 		"LABEL_AWAITING_REPORTER": "",
+		// Put on every new report, and only removed by "/close", "/spam" or a person
+		"LABEL_ANSWER_OWED": "",
 		"LABEL_SPAM": "spam",
 		"LABEL_UNTHREADED": "unthreaded",
 		"REOPEN_ON_REPORTER_MESSAGE": "true",
