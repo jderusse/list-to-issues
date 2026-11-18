@@ -1,0 +1,5 @@
+GITHUB_APP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+GITHUB_WEBHOOK_SECRET="a-long-random-string"
+HMAC_SECRET="another-long-random-string-of-32-characters-or-more"
+# Only in the secret-address mode:
+INBOUND_ADDRESS="in-a-long-random-local-part@mail.example.com"
