@@ -1,0 +1,92 @@
+// Placeholders only. Put real values and resource IDs in wrangler.local.jsonc,
+// which is gitignored, and pass it with `--config`. See the README.
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "list-to-issues",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-11-01",
+	// Invocation logs would record request URLs, and download links are URLs.
+	"observability": {
+		"enabled": true,
+		"logs": { "invocation_logs": false }
+	},
+	"triggers": { "crons": ["17 3 * * *"] },
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "list-to-issues",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	"r2_buckets": [{ "binding": "RAW", "bucket_name": "list-to-issues-raw" }],
+	"send_email": [{ "name": "EMAIL" }],
+	"queues": {
+		"producers": [
+			{ "binding": "INBOUND_QUEUE", "queue": "list-to-issues-inbound" },
+			{ "binding": "OUTBOUND_QUEUE", "queue": "list-to-issues-outbound" }
+		],
+		"consumers": [
+			{
+				"queue": "list-to-issues-inbound",
+				"max_batch_size": 1,
+				"max_concurrency": 1,
+				"max_retries": 10,
+				"dead_letter_queue": "list-to-issues-inbound-dlq"
+			},
+			{
+				"queue": "list-to-issues-outbound",
+				"max_batch_size": 1,
+				"max_concurrency": 1,
+				"max_retries": 10,
+				"dead_letter_queue": "list-to-issues-outbound-dlq"
+			}
+		]
+	},
+	"vars": {
+		"GITHUB_REPO": "example-org/example-repo",
+		"GITHUB_APP_ID": "0",
+		"GITHUB_INSTALLATION_ID": "0",
+
+		"LIST_ADDRESS": "list@example.com",
+		// "list-headers" or "secret-address"
+		"ACCEPT_MODE": "list-headers",
+		"LIST_ID": "list.example.com",
+		"LIST_BOUNCE_PATTERN": "^list\\+bounces-[^@]+@example\\.com$",
+		// JSON array of { "name": "...", "pattern": "..." }, for the secret-address mode
+		"ACCEPT_HEADER_CHECKS": "[]",
+		"OBSERVE_MODE": "false",
+
+		"SENDER_ADDRESS": "list-bot@mail.example.com",
+		"SENDER_NAME_TEMPLATE": "{commenter} via {label}",
+		"SENDER_LABEL": "Example List",
+		"CC_LIST": "false",
+		"CC_EXTRA_RECIPIENTS": "true",
+		"QUOTE_REPLY": "true",
+		"SIGNATURE_TEMPLATE": "",
+		"FORWARD_DIRECT_REPLIES": "false",
+
+		"COMMAND_PREFIX": "/",
+		// "none" or "reply"
+		"DEFAULT_OUTBOUND_MODE": "none",
+		"MIN_PERMISSION": "write",
+
+		"SUBJECT_TAG": "[listname]",
+		"FOOTER_PATTERN": "",
+		"LABELS_NEW": "via-email",
+		"LABEL_AWAITING_REPLY": "needs-reply",
+		"LABEL_SPAM": "spam",
+		"LABEL_UNTHREADED": "unthreaded",
+		"REOPEN_ON_REPORTER_MESSAGE": "true",
+
+		"ATTACHMENT_MAX_BYTES": "262144",
+		"DOWNLOAD_LINK_TTL_SECONDS": "900",
+		// Empty: keep the raw messages forever
+		"RETENTION_DAYS": "",
+		// "closed" or "received"
+		"RETENTION_FROM": "closed"
+	}
+	// Secrets, set with `wrangler secret put`:
+	//   GITHUB_APP_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET, HMAC_SECRET,
+	//   and INBOUND_ADDRESS in the secret-address mode.
+}
