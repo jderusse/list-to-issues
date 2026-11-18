@@ -22,7 +22,7 @@ export interface Upload {
 
 // Everything the Worker asks GitHub. The tests use an in-memory implementation.
 export interface GitHub {
-	createIssue(title: string, body: string, labels: string[]): Promise<number>;
+	createIssue(title: string, body: string, labels: string[], type?: string): Promise<number>;
 	createComment(issueNumber: number, body: string): Promise<number>;
 	getComment(commentId: number): Promise<GitHubComment | null>;
 	listComments(issueNumber: number, since: string): Promise<{ id: number; body: string }[]>;

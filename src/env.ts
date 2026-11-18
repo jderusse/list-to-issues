@@ -35,9 +35,13 @@ export interface Env {
 	FOOTER_PATTERN?: string;
 	LABELS_NEW?: string;
 	LABEL_AWAITING_REPLY?: string;
+	LABEL_TO_ACKNOWLEDGE?: string;
+	LABEL_AWAITING_REPORTER?: string;
 	LABEL_SPAM?: string;
 	LABEL_UNTHREADED?: string;
 	REOPEN_ON_REPORTER_MESSAGE?: string;
+	ISSUE_TYPE?: string;
+	ACK_TEMPLATE?: string;
 
 	ATTACHMENT_MAX_BYTES?: string;
 	DOWNLOAD_LINK_TTL_SECONDS?: string;

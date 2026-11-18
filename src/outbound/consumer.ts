@@ -7,9 +7,10 @@ import { parseMail } from "../inbound/parse";
 import { quotableText } from "../inbound/render";
 import { ACK, backoff, type CommentJob, type JobResult, type OutboundJob, retryIn } from "../jobs";
 import { escapeMarkdown, formatSize } from "../markdown";
+import { setReportStatus } from "../status";
 import type { Thread } from "../store";
 import { type Command, parseCommand, parseCommentReference } from "./commands";
-import { compose, linksToRepository, type Quote } from "./compose";
+import { compose, fill, linksToRepository, type Quote } from "./compose";
 import { attachUploads, UploadError } from "./uploads";
 
 // The email already left or was refused: what follows must not make the job run again.
@@ -41,8 +42,9 @@ async function loadQuote(thread: Thread, app: App): Promise<Quote | null> {
 }
 
 // Emails a comment. `command` is the comment that asked for it and gets the feedback,
-// `sourceId` is the comment whose text is sent: they differ for "/send".
-async function send(command: GitHubComment, sourceId: number, markdown: string, explicitRetry: boolean, thread: Thread, attempts: number, app: App): Promise<JobResult> {
+// `sourceId` is the comment whose text is sent: they differ for "/send". With `showCopy`,
+// the text is also posted on the issue, for emails whose text isn't in any comment.
+async function send(command: GitHubComment, sourceId: number, markdown: string, explicitRetry: boolean, thread: Thread, attempts: number, app: App, showCopy = false): Promise<JobResult> {
 	const { cfg, github, store } = app;
 	if ("" === markdown.trim()) {
 		return refuse(command, "there is nothing to send.", app);
@@ -113,8 +115,10 @@ async function send(command: GitHubComment, sourceId: number, markdown: string, 
 	await store.setOutboundStatus(sourceId, "done", messageId);
 	await store.addToThread(thread, messageId, false);
 	await quietly(() => github.addReaction(command.id, "rocket"), app);
-	if ("" !== cfg.labelAwaitingReply) {
-		await quietly(() => github.removeLabel(thread.issueNumber, cfg.labelAwaitingReply), app);
+	await quietly(() => setReportStatus(thread.issueNumber, "waiting", app), app);
+	if (showCopy) {
+		const quoted = prepared.markdown.trim().split("\n").map((line) => `> ${line}`.trimEnd()).join("\n");
+		await quietly(() => github.createComment(thread.issueNumber, `Sent to the reporter:\n\n${quoted}`), app);
 	}
 	app.log("outbound_sent", { comment: await ref(sourceId), attachments: mail.attachments.length });
 
@@ -137,6 +141,21 @@ async function sendExisting(command: GitHubComment, args: string, thread: Thread
 	const draft = parseCommand(target.body, app.cfg.commandPrefix);
 
 	return send(command, targetId, null === draft ? target.body : draft.rest, true, thread, attempts, app);
+}
+
+// Sends the configured acknowledgment, as the first answer of a thread.
+async function acknowledge(command: GitHubComment, rest: string, thread: Thread, attempts: number, app: App): Promise<JobResult> {
+	const { cfg, store } = app;
+	if ("" === cfg.ackTemplate) {
+		return refuse(command, "no acknowledgment template is configured.", app);
+	}
+	// A job that is delivered twice must not be mistaken for a second acknowledgment
+	if (null === (await store.getOutbound(command.id)) && (await store.hasOutbound(thread.issueNumber))) {
+		return refuse(command, `this thread was already answered. Use \`${cfg.commandPrefix}reply\` instead.`, app);
+	}
+	const text = [fill(cfg.ackTemplate, command.login, cfg).trim(), rest].filter((part) => "" !== part).join("\n\n");
+
+	return send(command, command.id, text, false, thread, attempts, app, true);
 }
 
 async function setReporter(command: GitHubComment, args: string, thread: Thread, app: App): Promise<JobResult> {
@@ -189,9 +208,7 @@ async function markSpam(command: GitHubComment, thread: Thread, app: App): Promi
 	await github.setIssueState(thread.issueNumber, "closed", "not_planned");
 	await github.ensureLabel(cfg.labelSpam);
 	await github.addLabels(thread.issueNumber, [cfg.labelSpam]);
-	if ("" !== cfg.labelAwaitingReply) {
-		await github.removeLabel(thread.issueNumber, cfg.labelAwaitingReply);
-	}
+	await setReportStatus(thread.issueNumber, "none", app);
 	await github.addReaction(command.id, "+1");
 
 	return ACK;
@@ -239,6 +256,10 @@ export async function processOutbound(job: OutboundJob, attempts: number, app: A
 			return thread.spam
 				? refuse(comment, "this thread is flagged as spam.", app)
 				: sendExisting(comment, command.args, thread, attempts, app);
+		case "ack":
+			return thread.spam
+				? refuse(comment, "this thread is flagged as spam.", app)
+				: acknowledge(comment, command.rest, thread, attempts, app);
 		case "reporter":
 			return setReporter(comment, command.args, thread, app);
 		case "attachments":

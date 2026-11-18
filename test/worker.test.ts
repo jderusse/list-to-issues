@@ -112,6 +112,7 @@ describe("commands", () => {
 		expect(parseCommand("!reporter a@example.org", "!")).toEqual({ name: "reporter", args: "a@example.org", rest: "" });
 		expect(parseCommand("Hello\n/reply", "/")).toBeNull();
 		expect(parseCommand("/replying to you", "/")).toBeNull();
+		expect(parseCommand("/ack", "/")).toEqual({ name: "ack", args: "", rest: "" });
 		expect(parseCommand("/unknown", "/")).toBeNull();
 		expect(parseCommand("", "/")).toBeNull();
 	});

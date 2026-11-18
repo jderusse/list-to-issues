@@ -321,6 +321,61 @@ describe("/send", () => {
 	});
 });
 
+describe("/ack", () => {
+	const template = { ACK_TEMPLATE: "Hello,\n\nWe received your report.\n\n{commenter}, for {label}" };
+
+	it("sends the configured acknowledgment and shows it on the issue", async () => {
+		const app = makeApp(template);
+		await thread(app);
+		const id = await comment(app, 1, "/ack");
+
+		const mail = app.mailer.last();
+		expect(mail.to.address).toBe(REPORTER);
+		expect(mail.subject).toBe("Re: A question");
+		expect(mail.headers["In-Reply-To"]).toBe("<root@example.org>");
+		expect(mail.text.startsWith("Hello,\n\nWe received your report.\n\nmaintainer, for Example List")).toBe(true);
+		expect(app.github.comments.get(id)!.reactions).toEqual(["rocket"]);
+		expect(app.github.commentsOf(1).at(-1)!.body).toBe("Sent to the reporter:\n\n> Hello,\n>\n> We received your report.\n>\n> maintainer, for Example List");
+		expect(app.github.issue(1).labels.has("needs-reply")).toBe(false);
+	});
+
+	it("adds the text written below the command", async () => {
+		const app = makeApp(template);
+		await thread(app);
+		await comment(app, 1, "/ack\nWe will come back to you next week.");
+
+		expect(app.mailer.last().text).toContain("maintainer, for Example List\n\nWe will come back to you next week.");
+	});
+
+	it("is the first answer of a thread only", async () => {
+		const app = makeApp(template);
+		await thread(app);
+		const first = await comment(app, 1, "/ack");
+		const second = await comment(app, 1, "/ack");
+
+		expect(app.mailer.sent).toHaveLength(1);
+		expect(app.github.comments.get(second)!.reactions).toEqual(["confused"]);
+		expect(app.github.commentsOf(1).at(-1)!.body).toContain("already answered");
+
+		// The same job delivered twice is not a second acknowledgment
+		const comments = app.github.commentsOf(1).length;
+		app.outbound.push({ type: "comment", issue: 1, commentId: first, origin: "https://worker.example.com" });
+		await drainOutbound(app);
+		expect(app.mailer.sent).toHaveLength(1);
+		expect(app.github.commentsOf(1)).toHaveLength(comments);
+	});
+
+	it("needs a template", async () => {
+		const app = makeApp();
+		await thread(app);
+		const id = await comment(app, 1, "/ack");
+
+		expect(app.mailer.sent).toHaveLength(0);
+		expect(app.github.comments.get(id)!.reactions).toEqual(["confused"]);
+		expect(app.github.commentsOf(1).at(-1)!.body).toContain("no acknowledgment template is configured");
+	});
+});
+
 describe("/reporter", () => {
 	it("changes who receives the emails", async () => {
 		const app = makeApp();

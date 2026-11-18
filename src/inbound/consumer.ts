@@ -3,6 +3,7 @@ import { type App, attachmentPrefix, ref } from "../app";
 import { hashId } from "../crypto";
 import { verifyEchoHeader } from "../echo";
 import { ACK, backoff, type InboundJob, type JobResult, retryIn } from "../jobs";
+import { setReportStatus, statusLabel } from "../status";
 import type { MessageRow, Thread } from "../store";
 import { type ParsedMail, parseMail } from "./parse";
 import { renderMail } from "./render";
@@ -75,11 +76,11 @@ async function openIssue(mail: ParsedMail, job: InboundJob, pending: MessageRow 
 		if (unthreaded) {
 			labels.push(cfg.labelUnthreaded);
 		}
-		if (!mail.automatic && "" !== cfg.labelAwaitingReply) {
-			labels.push(cfg.labelAwaitingReply);
+		if (!mail.automatic && "" !== statusLabel("to_acknowledge", app)) {
+			labels.push(statusLabel("to_acknowledge", app));
 		}
 		await ensureLabels(labels, app);
-		issue = await github.createIssue(rendered.title, `${rendered.parts[0]}\n\n${marker(hash, 0)}`, labels);
+		issue = await github.createIssue(rendered.title, `${rendered.parts[0]}\n\n${marker(hash, 0)}`, labels, cfg.issueType || undefined);
 	}
 	await store.updateInbound(mail.messageId, { issueNumber: issue });
 
@@ -109,10 +110,8 @@ async function addComment(mail: ParsedMail, job: InboundJob, pending: MessageRow
 	await store.updateInbound(mail.messageId, { commentId, fromReporter });
 
 	if (fromKnown && !mail.automatic) {
-		if ("" !== cfg.labelAwaitingReply) {
-			await ensureLabels([cfg.labelAwaitingReply], app);
-			await github.addLabels(issue, [cfg.labelAwaitingReply]);
-		}
+		// Until something was sent to them, the reporter is still waiting for an acknowledgment
+		await setReportStatus(issue, (await store.hasOutbound(issue)) ? "to_reply" : "to_acknowledge", app);
 		if (null !== thread.closedAt && cfg.reopenOnReporterMessage) {
 			await github.setIssueState(issue, "open");
 			await store.setClosed(issue, null);

@@ -85,6 +85,9 @@ describe("GitHub App client", () => {
 		expect(issueCall!.url).toBe("https://api.github.com/repos/example-org/example-repo/issues");
 		expect(issueCall!.headers.get("authorization")).toBe("Bearer token-1");
 		expect(JSON.parse(issueCall!.body)).toEqual({ title: "Title", body: "Body", labels: ["via-email"] });
+
+		await client.createIssue("Title", "Body", [], "Report");
+		expect(JSON.parse(calls.at(-1)!.body)).toEqual({ title: "Title", body: "Body", labels: [], type: "Report" });
 	});
 
 	it("keeps the installation token until shortly before it expires", async () => {

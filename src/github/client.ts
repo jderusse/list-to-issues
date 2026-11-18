@@ -88,8 +88,8 @@ export class GitHubClient implements GitHub {
 		return response;
 	}
 
-	async createIssue(title: string, body: string, labels: string[]): Promise<number> {
-		const response = await this.request("POST", `${this.repo}/issues`, { title, body, labels });
+	async createIssue(title: string, body: string, labels: string[], type?: string): Promise<number> {
+		const response = await this.request("POST", `${this.repo}/issues`, { title, body, labels, ...(type ? { type } : {}) });
 
 		return (await response.json<{ number: number }>()).number;
 	}

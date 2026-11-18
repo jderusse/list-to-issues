@@ -45,24 +45,34 @@ function displayName(attachment: MailAttachment, index: number): string {
 	return oneLine(attachment.filename).slice(0, 200) || `attachment-${index + 1}`;
 }
 
+// The facts about a message, as a YAML block that people can read and tools can parse.
+// Every value is a JSON string, which is also a YAML string, inside a code fence.
 function headerBlock(mail: ParsedMail, r2Key: string): string {
-	const from = "" === mail.sender.name ? mail.sender.address : `${mail.sender.name} <${mail.sender.address}>`;
-	let authentication = "no result from the receiving server :warning:";
-	if (null !== mail.auth) {
-		authentication = `SPF ${mail.auth.spf}, DKIM ${mail.auth.dkim}, DMARC ${mail.auth.dmarc}${"pass" === mail.auth.dmarc ? "" : " :warning:"}`;
-	}
 	const lines = [
-		`> **From:** ${escapeMarkdown(oneLine(from)) || "(unknown)"}`,
-		`> **Date:** ${escapeMarkdown(oneLine(mail.date)) || "(unknown)"}`,
-		`> **Message-ID:** ${escapeMarkdown(oneLine(mail.messageId))}`,
-		`> **Raw message:** \`${r2Key}\``,
-		`> **Authentication:** ${authentication}`,
+		"from:",
+		`  name: ${JSON.stringify(oneLine(mail.sender.name))}`,
+		`  email: ${JSON.stringify(mail.sender.address)}`,
+		`date: ${JSON.stringify(oneLine(mail.date))}`,
+		`message_id: ${JSON.stringify(mail.messageId)}`,
+		`raw_message: ${JSON.stringify(r2Key)}`,
 	];
+	const notes: string[] = [];
+	if (null === mail.auth) {
+		lines.push("authentication: null");
+		notes.push("> :warning: The receiving server gave no authentication result for this message.");
+	} else {
+		lines.push("authentication:", `  spf: ${JSON.stringify(mail.auth.spf)}`, `  dkim: ${JSON.stringify(mail.auth.dkim)}`, `  dmarc: ${JSON.stringify(mail.auth.dmarc)}`);
+		if ("pass" !== mail.auth.dmarc) {
+			// Replies go to the address of the sender, so this must be visible
+			notes.push(`> :warning: The sender of this message is not authenticated (DMARC ${mail.auth.dmarc}).`);
+		}
+	}
 	if (mail.automatic) {
-		lines.push("> **Automatic message**");
+		lines.push("automatic: true");
+		notes.push("> Automatic message.");
 	}
 
-	return lines.join("\n");
+	return [fence(lines.join("\n"), "yaml"), ...(notes.length > 0 ? [notes.join("\n")] : [])].join("\n\n");
 }
 
 function textBlock(name: string, size: number, content: string, lang: string, note = ""): string {

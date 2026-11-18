@@ -1,4 +1,4 @@
-export type CommandName = "reply" | "send" | "reporter" | "attachments" | "spam";
+export type CommandName = "reply" | "send" | "ack" | "reporter" | "attachments" | "spam";
 
 export interface Command {
 	name: CommandName;
@@ -8,7 +8,7 @@ export interface Command {
 	rest: string;
 }
 
-const NAMES: CommandName[] = ["reply", "send", "reporter", "attachments", "spam"];
+const NAMES: CommandName[] = ["reply", "send", "ack", "reporter", "attachments", "spam"];
 
 // A command is the first line of a comment: the prefix, a known name, then its arguments.
 export function parseCommand(body: string, prefix: string): Command | null {

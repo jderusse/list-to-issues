@@ -24,6 +24,7 @@ interface FakeIssue {
 	labels: Set<string>;
 	state: "open" | "closed";
 	reason: string | null;
+	type?: string;
 }
 
 interface FakeComment extends GitHubComment {
@@ -85,10 +86,10 @@ export class FakeGitHub implements GitHub {
 		return id;
 	}
 
-	createIssue(title: string, body: string, labels: string[]): Promise<number> {
+	createIssue(title: string, body: string, labels: string[], type?: string): Promise<number> {
 		return this.run("createIssue", () => {
 			const number = this.nextIssue++;
-			this.issues.set(number, { title, body, labels: new Set(labels), state: "open", reason: null });
+			this.issues.set(number, { title, body, labels: new Set(labels), state: "open", reason: null, type });
 
 			return number;
 		});

@@ -26,7 +26,7 @@ export interface ComposeInput {
 // The email service caps a header value at 2,048 bytes.
 const REFERENCES_BYTES = 1800;
 
-function fill(template: string, commenter: string, cfg: Config): string {
+export function fill(template: string, commenter: string, cfg: Config): string {
 	return template.replaceAll("{commenter}", commenter).replaceAll("{label}", cfg.senderLabel);
 }
 

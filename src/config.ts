@@ -40,9 +40,13 @@ export interface Config {
 	footerPattern: RegExp | null;
 	labelsNew: string[];
 	labelAwaitingReply: string;
+	labelToAcknowledge: string;
+	labelAwaitingReporter: string;
 	labelSpam: string;
 	labelUnthreaded: string;
 	reopenOnReporterMessage: boolean;
+	issueType: string;
+	ackTemplate: string;
 
 	attachmentMaxBytes: number;
 	downloadLinkTtl: number;
@@ -208,9 +212,13 @@ export function loadConfig(env: Env): Config {
 		footerPattern: regex("FOOTER_PATTERN", env.FOOTER_PATTERN, "m"),
 		labelsNew: optional(env.LABELS_NEW, "via-email").split(",").map((label) => label.trim()).filter((label) => "" !== label),
 		labelAwaitingReply: optional(env.LABEL_AWAITING_REPLY, "needs-reply"),
+		labelToAcknowledge: optional(env.LABEL_TO_ACKNOWLEDGE, ""),
+		labelAwaitingReporter: optional(env.LABEL_AWAITING_REPORTER, ""),
 		labelSpam: optional(env.LABEL_SPAM, "spam") || "spam",
 		labelUnthreaded: optional(env.LABEL_UNTHREADED, "unthreaded") || "unthreaded",
 		reopenOnReporterMessage: bool(env.REOPEN_ON_REPORTER_MESSAGE, true),
+		issueType: optional(env.ISSUE_TYPE, ""),
+		ackTemplate: optional(env.ACK_TEMPLATE, ""),
 
 		attachmentMaxBytes: integer("ATTACHMENT_MAX_BYTES", env.ATTACHMENT_MAX_BYTES, 262144),
 		downloadLinkTtl: integer("DOWNLOAD_LINK_TTL_SECONDS", env.DOWNLOAD_LINK_TTL_SECONDS, 900) || 900,

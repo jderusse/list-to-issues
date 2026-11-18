@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GitHubError } from "../src/github/types";
-import { buildMail, deliver, drainInbound, LIST, makeApp, receive, REPORTER } from "./helpers";
+import { buildMail, comment, deliver, drainInbound, LIST, makeApp, receive, REPORTER } from "./helpers";
 
 describe("inbound threading", () => {
 	it("opens an issue for a new thread", async () => {
@@ -11,11 +11,23 @@ describe("inbound threading", () => {
 		const issue = app.github.issue(1);
 		expect(issue.title).toBe("A question");
 		expect([...issue.labels]).toEqual(["via-email", "needs-reply"]);
-		expect(issue.body).toContain("**From:** Rita Reporter &lt;reporter@example.org&gt;");
-		expect(issue.body).toContain("**Message-ID:** root@example.org");
-		expect(issue.body).toMatch(/\*\*Raw message:\*\* `raw\/2026\/11\/[0-9a-f-]+\.eml`/);
-		expect(issue.body).toContain("SPF pass, DKIM pass, DMARC pass");
+		expect(issue.body).toMatch(new RegExp([
+			"^```yaml",
+			"from:",
+			'  name: "Rita Reporter"',
+			'  email: "reporter@example.org"',
+			'date: "2026-11-18T09:00:00.000Z"',
+			'message_id: "root@example.org"',
+			'raw_message: "raw/2026/11/[0-9a-f-]+\\.eml"',
+			"authentication:",
+			'  spf: "pass"',
+			'  dkim: "pass"',
+			'  dmarc: "pass"',
+			"```\n\nHello,",
+		].join("\n")));
+		expect(issue.body).not.toContain(":warning:");
 		expect(issue.body).toContain("This is the message.");
+		expect(issue.type).toBeUndefined();
 
 		const thread = await app.store.getThread(1);
 		expect(thread?.reporter).toEqual({ address: REPORTER, name: "Rita Reporter" });
@@ -86,7 +98,7 @@ describe("inbound threading", () => {
 		await drainInbound(app);
 
 		expect(app.github.issues.size).toBe(1);
-		expect(app.github.issue(1).body).toMatch(/\*\*Message-ID:\*\* [0-9a-f]{40}@synthetic\.invalid/);
+		expect(app.github.issue(1).body).toMatch(/message_id: "[0-9a-f]{40}@synthetic\.invalid"/);
 	});
 });
 
@@ -176,7 +188,8 @@ describe("inbound body", () => {
 		expect(body).toContain("&nbsp;&nbsp;&nbsp;&nbsp;indented");
 		expect(body).toContain("someone@example.com");
 		expect(body).toContain("https://example.com/a_b?c=1&amp;d=2");
-		expect(body).not.toMatch(/(^|[^\\])```/m);
+		// Below the metadata block, no fence of the message is left unescaped
+		expect(body.slice(body.indexOf("```\n\n") + 3)).not.toMatch(/(^|[^\\])```/m);
 	});
 
 	it("shows the authentication results of the receiving server only", async () => {
@@ -185,9 +198,83 @@ describe("inbound body", () => {
 		await receive(app, { messageId: "b@example.org", auth: "mx.attacker.example; spf=pass; dkim=pass; dmarc=pass" });
 		await receive(app, { messageId: "c@example.org", auth: null });
 
-		expect(app.github.issue(1).body).toContain("SPF fail, DKIM none, DMARC fail :warning:");
-		expect(app.github.issue(2).body).toContain("no result from the receiving server :warning:");
-		expect(app.github.issue(3).body).toContain("no result from the receiving server :warning:");
+		expect(app.github.issue(1).body).toContain('  spf: "fail"\n  dkim: "none"\n  dmarc: "fail"');
+		expect(app.github.issue(1).body).toContain("> :warning: The sender of this message is not authenticated (DMARC fail).");
+		for (const number of [2, 3]) {
+			expect(app.github.issue(number).body).toContain("authentication: null");
+			expect(app.github.issue(number).body).toContain("> :warning: The receiving server gave no authentication result for this message.");
+		}
+	});
+});
+
+describe("inbound metadata", () => {
+	it("can't be broken by what the sender controls", async () => {
+		const app = makeApp();
+		await receive(app, { from: '"Evil \\"```\\" @octocat" <evil@example.net>', messageId: "weird```id\"@example.net" });
+
+		const body = app.github.issue(1).body;
+		const block = body.slice(0, body.indexOf("\n````\n"));
+		expect(body.startsWith("````yaml\n")).toBe(true);
+		expect(block).toContain('  name: "Evil ``` @octocat"');
+		expect(block).toContain('message_id: "weird```id\\"@example.net"');
+	});
+
+	it("sets the configured issue type", async () => {
+		const app = makeApp({ ISSUE_TYPE: "Report" });
+		await receive(app);
+
+		expect(app.github.issue(1).type).toBe("Report");
+	});
+});
+
+describe("report status", () => {
+	const labels = { LABEL_TO_ACKNOWLEDGE: "to-acknowledge", LABEL_AWAITING_REPORTER: "waiting-for-reporter" };
+	const status = (app: ReturnType<typeof makeApp>): string[] => [...app.github.issue(1).labels].filter((label) => "via-email" !== label);
+
+	it("follows who wrote last", async () => {
+		const app = makeApp(labels);
+		await receive(app, { messageId: "root@example.org" });
+		expect(status(app)).toEqual(["to-acknowledge"]);
+
+		// More from the reporter before any answer: still to acknowledge
+		await receive(app, { messageId: "more@example.org", inReplyTo: "root@example.org" });
+		expect(status(app)).toEqual(["to-acknowledge"]);
+
+		await comment(app, 1, "/reply\nThanks, we are looking into it.");
+		expect(status(app)).toEqual(["waiting-for-reporter"]);
+
+		// Somebody else writes: the reporter is not waiting for anything new
+		await receive(app, { messageId: "member@example.org", inReplyTo: "root@example.org", from: "member@example.net" });
+		expect(status(app)).toEqual(["waiting-for-reporter"]);
+
+		await receive(app, { messageId: "answer@example.org", inReplyTo: "sent-1@mail.example.com" });
+		expect(status(app)).toEqual(["needs-reply"]);
+
+		await comment(app, 1, "/reply\nGot it.");
+		expect(status(app)).toEqual(["waiting-for-reporter"]);
+
+		await comment(app, 1, "/spam");
+		expect(status(app)).toEqual(["spam"]);
+	});
+
+	it("works with a single label", async () => {
+		const app = makeApp();
+		await receive(app, { messageId: "root@example.org" });
+		expect(status(app)).toEqual(["needs-reply"]);
+
+		await comment(app, 1, "/reply\nThanks.");
+		expect(status(app)).toEqual([]);
+
+		await receive(app, { messageId: "answer@example.org", inReplyTo: "root@example.org" });
+		expect(status(app)).toEqual(["needs-reply"]);
+	});
+
+	it("can be disabled", async () => {
+		const app = makeApp({ LABEL_AWAITING_REPLY: "" });
+		await receive(app, { messageId: "root@example.org" });
+		await receive(app, { messageId: "more@example.org", inReplyTo: "root@example.org" });
+
+		expect(status(app)).toEqual([]);
 	});
 });
 
@@ -198,7 +285,7 @@ describe("inbound labels and state", () => {
 		app.github.issue(1).labels.delete("needs-reply");
 		await receive(app, { messageId: "ooo@example.org", inReplyTo: "root@example.org", headers: { "Auto-Submitted": "auto-replied" }, text: "I am away." });
 
-		expect(app.github.commentsOf(1)[0]!.body).toContain("**Automatic message**");
+		expect(app.github.commentsOf(1)[0]!.body).toContain("automatic: true\n```\n\n> Automatic message.");
 		expect(app.github.issue(1).labels.has("needs-reply")).toBe(false);
 	});
 
@@ -206,7 +293,7 @@ describe("inbound labels and state", () => {
 		const app = makeApp();
 		await receive(app, { headers: { "X-Auto-Response-Suppress": "DR, OOF, AutoReply" } });
 
-		expect(app.github.issue(1).body).not.toContain("Automatic message");
+		expect(app.github.issue(1).body).not.toContain("automatic");
 		expect(app.github.issue(1).labels.has("needs-reply")).toBe(true);
 	});
 

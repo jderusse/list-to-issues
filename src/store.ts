@@ -166,6 +166,11 @@ export class Store {
 		await this.db.prepare("DELETE FROM messages WHERE direction = 'out' AND comment_id = ? AND status != 'done'").bind(commentId).run();
 	}
 
+	// Whether an email was already sent in this thread.
+	async hasOutbound(issueNumber: number): Promise<boolean> {
+		return null !== (await this.db.prepare("SELECT id FROM messages WHERE direction = 'out' AND status = 'done' AND issue_number = ? LIMIT 1").bind(issueNumber).first());
+	}
+
 	async isMirroredComment(commentId: number): Promise<boolean> {
 		return null !== (await this.db.prepare("SELECT id FROM messages WHERE direction = 'in' AND comment_id = ?").bind(commentId).first());
 	}
