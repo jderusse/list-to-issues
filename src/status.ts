@@ -22,6 +22,14 @@ export function statusLabel(status: ReportStatus, app: App): string {
 	}
 }
 
+// Ends the tracking of a thread: no status, and no answer is owed anymore.
+export async function clearReportLabels(issue: number, app: App): Promise<void> {
+	await setReportStatus(issue, "none", app);
+	if ("" !== app.cfg.labelAnswerOwed) {
+		await app.github.removeLabel(issue, app.cfg.labelAnswerOwed);
+	}
+}
+
 // Puts the label of the status on the issue and removes the labels of the other statuses.
 export async function setReportStatus(issue: number, status: ReportStatus, app: App): Promise<void> {
 	const { cfg, github } = app;

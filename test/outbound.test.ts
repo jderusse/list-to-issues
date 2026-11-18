@@ -415,17 +415,39 @@ describe("/reporter", () => {
 	});
 });
 
+describe("/close", () => {
+	it("closes the thread without silencing it", async () => {
+		const app = makeApp({ LABEL_ANSWER_OWED: "answer-owed" });
+		await thread(app);
+		expect([...app.github.issue(1).labels]).toEqual(["via-email", "needs-reply", "answer-owed"]);
+
+		const id = await comment(app, 1, "/close");
+		const issue = app.github.issue(1);
+		expect(issue.state).toBe("closed");
+		expect(issue.reason).toBe("completed");
+		expect([...issue.labels]).toEqual(["via-email"]);
+		expect(app.github.comments.get(id)!.reactions).toEqual(["+1"]);
+		expect((await app.store.getThread(1))?.closedAt).toBe("2026-11-18T10:00:00.000Z");
+		expect((await app.store.getThread(1))?.spam).toBe(false);
+
+		// A later message is mirrored, and the issue comes back
+		await receive(app, { messageId: "later@example.org", inReplyTo: "root@example.org", text: "One more thing." });
+		expect(app.github.commentsOf(1).some((c) => c.body.includes("One more thing."))).toBe(true);
+		expect(issue.state).toBe("open");
+		expect([...issue.labels]).toEqual(["via-email", "needs-reply"]);
+	});
+});
+
 describe("/spam", () => {
 	it("closes, labels and silences the thread", async () => {
-		const app = makeApp();
+		const app = makeApp({ LABEL_ANSWER_OWED: "answer-owed" });
 		await thread(app);
 		const id = await comment(app, 1, "/spam");
 
 		const issue = app.github.issue(1);
 		expect(issue.state).toBe("closed");
 		expect(issue.reason).toBe("not_planned");
-		expect(issue.labels.has("spam")).toBe(true);
-		expect(issue.labels.has("needs-reply")).toBe(false);
+		expect([...issue.labels]).toEqual(["via-email", "spam"]);
 		expect(app.github.comments.get(id)!.reactions).toEqual(["+1"]);
 
 		const before = app.github.commentsOf(1).length;

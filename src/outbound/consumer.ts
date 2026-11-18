@@ -7,7 +7,7 @@ import { parseMail } from "../inbound/parse";
 import { quotableText } from "../inbound/render";
 import { ACK, backoff, type CommentJob, type JobResult, type OutboundJob, retryIn } from "../jobs";
 import { escapeMarkdown, formatSize } from "../markdown";
-import { setReportStatus } from "../status";
+import { clearReportLabels, setReportStatus } from "../status";
 import type { Thread } from "../store";
 import { type Command, parseCommand, parseCommentReference } from "./commands";
 import { compose, fill, linksToRepository, type Quote } from "./compose";
@@ -208,8 +208,19 @@ async function markSpam(command: GitHubComment, thread: Thread, app: App): Promi
 	await github.setIssueState(thread.issueNumber, "closed", "not_planned");
 	await github.ensureLabel(cfg.labelSpam);
 	await github.addLabels(thread.issueNumber, [cfg.labelSpam]);
-	await setReportStatus(thread.issueNumber, "none", app);
+	await clearReportLabels(thread.issueNumber, app);
 	await github.addReaction(command.id, "+1");
+
+	return ACK;
+}
+
+// Ends a thread that needs nothing more: closed, and no label says that somebody waits.
+// Unlike with "/spam", its later messages are still mirrored.
+async function closeThread(command: GitHubComment, thread: Thread, app: App): Promise<JobResult> {
+	await app.store.setClosed(thread.issueNumber, app.now().toISOString());
+	await clearReportLabels(thread.issueNumber, app);
+	await app.github.setIssueState(thread.issueNumber, "closed", "completed");
+	await app.github.addReaction(command.id, "+1");
 
 	return ACK;
 }
@@ -264,6 +275,8 @@ export async function processOutbound(job: OutboundJob, attempts: number, app: A
 			return setReporter(comment, command.args, thread, app);
 		case "attachments":
 			return listAttachments(comment, job, thread, app);
+		case "close":
+			return closeThread(comment, thread, app);
 		case "spam":
 			return markSpam(comment, thread, app);
 	}

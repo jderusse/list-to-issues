@@ -5,7 +5,7 @@ import { beforeEach } from "vitest";
 // Every test starts with an empty database and an empty bucket.
 beforeEach(async () => {
 	await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
-	await env.DB.batch([env.DB.prepare("DELETE FROM messages"), env.DB.prepare("DELETE FROM threads")]);
+	await env.DB.batch(["messages", "threads", "ignored_messages"].map((table) => env.DB.prepare(`DELETE FROM ${table}`)));
 	for (;;) {
 		const { objects } = await env.RAW.list();
 		if (0 === objects.length) {

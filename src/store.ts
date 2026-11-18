@@ -109,6 +109,19 @@ export class Store {
 		return row?.issue_number ?? null;
 	}
 
+	async isIgnored(messageIds: string[]): Promise<boolean> {
+		const ids = [...new Set(messageIds)].slice(0, 50);
+		if (0 === ids.length) {
+			return false;
+		}
+
+		return null !== (await this.db.prepare(`SELECT message_id FROM ignored_messages WHERE message_id IN (${ids.map(() => "?").join(", ")}) LIMIT 1`).bind(...ids).first());
+	}
+
+	async addIgnored(messageId: string, now: string): Promise<void> {
+		await this.db.prepare("INSERT INTO ignored_messages (message_id, created_at) VALUES (?, ?) ON CONFLICT (message_id) DO NOTHING").bind(messageId, now).run();
+	}
+
 	async claimInbound(messageId: string, issueNumber: number | null, r2Key: string, fromReporter: boolean, now: string): Promise<void> {
 		await this.db
 			.prepare("INSERT INTO messages (message_id, direction, issue_number, r2_key, status, from_reporter, created_at) VALUES (?, 'in', ?, ?, 'pending', ?, ?) ON CONFLICT (message_id) DO NOTHING")

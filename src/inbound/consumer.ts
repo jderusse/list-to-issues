@@ -1,5 +1,6 @@
 import { type Address, uniqueAddresses } from "../addresses";
 import { type App, attachmentPrefix, ref } from "../app";
+import { isIgnoredSender } from "../config";
 import { hashId } from "../crypto";
 import { verifyEchoHeader } from "../echo";
 import { ACK, backoff, type InboundJob, type JobResult, retryIn } from "../jobs";
@@ -76,8 +77,8 @@ async function openIssue(mail: ParsedMail, job: InboundJob, pending: MessageRow 
 		if (unthreaded) {
 			labels.push(cfg.labelUnthreaded);
 		}
-		if (!mail.automatic && "" !== statusLabel("to_acknowledge", app)) {
-			labels.push(statusLabel("to_acknowledge", app));
+		if (!mail.automatic) {
+			labels.push(...[statusLabel("to_acknowledge", app), cfg.labelAnswerOwed].filter((label) => "" !== label));
 		}
 		await ensureLabels(labels, app);
 		issue = await github.createIssue(rendered.title, `${rendered.parts[0]}\n\n${marker(hash, 0)}`, labels, cfg.issueType || undefined);
@@ -159,6 +160,14 @@ export async function processInbound(job: InboundJob, attempts: number, app: App
 	const thread = null === issue ? null : await store.getThread(issue);
 	const isRoot = null === thread || thread.rootMessageId === mail.messageId;
 
+	if (null === issue && null === pending && (isIgnoredSender(mail.sender.address, cfg) || (await store.isIgnored(references)))) {
+		// An ignored sender, or a reply to a message that was ignored: keep nothing but its id
+		await store.addIgnored(mail.messageId, app.now().toISOString());
+		await app.raw.delete(job.r2Key);
+		app.log("inbound_skipped", { id, reason: "ignored" });
+
+		return ACK;
+	}
 	if (null !== issue && null === thread && null === pending) {
 		// The parent is known but its thread isn't recorded yet: its own job is being retried
 		return retryIn(backoff(attempts));

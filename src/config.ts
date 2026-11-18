@@ -22,6 +22,8 @@ export interface Config {
 	inboundAddress: string;
 	headerChecks: HeaderCheck[];
 	observe: boolean;
+	// Addresses, and domains with their subdomains, whose messages are dropped
+	ignoreSenders: string[];
 
 	senderAddress: string;
 	senderNameTemplate: string;
@@ -40,6 +42,7 @@ export interface Config {
 	footerPattern: RegExp | null;
 	labelsNew: string[];
 	labelAwaitingReply: string;
+	labelAnswerOwed: string;
 	labelToAcknowledge: string;
 	labelAwaitingReporter: string;
 	labelSpam: string;
@@ -194,6 +197,7 @@ export function loadConfig(env: Env): Config {
 		inboundAddress,
 		headerChecks: headerChecks(env.ACCEPT_HEADER_CHECKS),
 		observe,
+		ignoreSenders: optional(env.IGNORE_SENDERS, "").toLowerCase().split(/[\s,]+/).map((entry) => entry.replace(/^@/, "")).filter((entry) => "" !== entry),
 
 		senderAddress,
 		senderNameTemplate: optional(env.SENDER_NAME_TEMPLATE, "{commenter} via {label}"),
@@ -212,6 +216,7 @@ export function loadConfig(env: Env): Config {
 		footerPattern: regex("FOOTER_PATTERN", env.FOOTER_PATTERN, "m"),
 		labelsNew: optional(env.LABELS_NEW, "via-email").split(",").map((label) => label.trim()).filter((label) => "" !== label),
 		labelAwaitingReply: optional(env.LABEL_AWAITING_REPLY, "needs-reply"),
+		labelAnswerOwed: optional(env.LABEL_ANSWER_OWED, ""),
 		labelToAcknowledge: optional(env.LABEL_TO_ACKNOWLEDGE, ""),
 		labelAwaitingReporter: optional(env.LABEL_AWAITING_REPORTER, ""),
 		labelSpam: optional(env.LABEL_SPAM, "spam") || "spam",
@@ -230,6 +235,12 @@ export function loadConfig(env: Env): Config {
 		hmacSecret,
 		privateKey: required(env, "GITHUB_APP_PRIVATE_KEY"),
 	};
+}
+
+export function isIgnoredSender(address: string, cfg: Config): boolean {
+	const domain = address.slice(address.lastIndexOf("@") + 1);
+
+	return cfg.ignoreSenders.some((entry) => (entry.includes("@") ? entry === address : domain === entry || domain.endsWith(`.${entry}`)));
 }
 
 export function permissionRank(permission: string): number {

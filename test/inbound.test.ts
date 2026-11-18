@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { GitHubError } from "../src/github/types";
 import { buildMail, comment, deliver, drainInbound, LIST, makeApp, receive, REPORTER } from "./helpers";
@@ -207,6 +208,49 @@ describe("inbound body", () => {
 	});
 });
 
+describe("ignored senders", () => {
+	const ignore = { IGNORE_SENDERS: "notices.example, @partner.example.net, robot@example.org" };
+
+	it("drops their messages and keeps nothing", async () => {
+		const app = makeApp(ignore);
+		for (const from of ["Program <contact@notices.example>", "someone@mail.notices.example", "x@partner.example.net", "Robot <ROBOT@example.org>"]) {
+			await receive(app, { from });
+		}
+
+		expect(app.github.issues.size).toBe(0);
+		expect(app.github.calls).toHaveLength(0);
+		expect((await env.RAW.list()).objects).toHaveLength(0);
+		expect(app.logs.filter((log) => "ignored" === log.fields.reason)).toHaveLength(4);
+	});
+
+	it("doesn't drop look-alike senders", async () => {
+		const app = makeApp(ignore);
+		for (const from of ["someone@notnotices.example", "other@example.org", "x@example.net"]) {
+			await receive(app, { from });
+		}
+
+		expect(app.github.issues.size).toBe(3);
+	});
+
+	it("drops the replies to an ignored message, whoever writes them", async () => {
+		const app = makeApp(ignore);
+		await receive(app, { from: "contact@notices.example", messageId: "notice@notices.example" });
+		await receive(app, { from: "member@example.net", messageId: "reply@example.net", inReplyTo: "notice@notices.example" });
+		await receive(app, { from: "other@example.net", messageId: "reply2@example.net", references: ["notice@notices.example", "reply@example.net"], inReplyTo: "reply@example.net" });
+
+		expect(app.github.issues.size).toBe(0);
+		expect((await env.RAW.list()).objects).toHaveLength(0);
+	});
+
+	it("still mirrors what an ignored sender writes in a mirrored thread", async () => {
+		const app = makeApp(ignore);
+		await receive(app, { messageId: "root@example.org" });
+		await receive(app, { from: "contact@notices.example", messageId: "notice@notices.example", inReplyTo: "root@example.org", text: "About this report." });
+
+		expect(app.github.commentsOf(1)[0]!.body).toContain("About this report.");
+	});
+});
+
 describe("inbound metadata", () => {
 	it("can't be broken by what the sender controls", async () => {
 		const app = makeApp();
@@ -267,6 +311,24 @@ describe("report status", () => {
 
 		await receive(app, { messageId: "answer@example.org", inReplyTo: "root@example.org" });
 		expect(status(app)).toEqual(["needs-reply"]);
+	});
+
+	it("keeps the answer-owed label until somebody ends the thread", async () => {
+		const app = makeApp({ ...labels, LABEL_ANSWER_OWED: "answer-owed" });
+		await receive(app, { messageId: "root@example.org" });
+		expect(status(app)).toEqual(["to-acknowledge", "answer-owed"]);
+
+		await comment(app, 1, "/reply\nThanks, we are looking into it.");
+		await receive(app, { messageId: "answer@example.org", inReplyTo: "sent-1@mail.example.com" });
+		await comment(app, 1, "/reply\nHere is our conclusion.");
+		expect(status(app)).toEqual(["answer-owed", "waiting-for-reporter"]);
+
+		await comment(app, 1, "/close");
+		expect(status(app)).toEqual([]);
+
+		// An automatic message that starts a thread owes nothing
+		await receive(app, { messageId: "auto@example.org", headers: { "Auto-Submitted": "auto-generated" } });
+		expect([...app.github.issue(2).labels]).toEqual(["via-email"]);
 	});
 
 	it("can be disabled", async () => {

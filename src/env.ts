@@ -17,6 +17,7 @@ export interface Env {
 	LIST_BOUNCE_PATTERN?: string;
 	ACCEPT_HEADER_CHECKS?: string;
 	OBSERVE_MODE?: string;
+	IGNORE_SENDERS?: string;
 
 	SENDER_ADDRESS: string;
 	SENDER_NAME_TEMPLATE?: string;
@@ -35,6 +36,7 @@ export interface Env {
 	FOOTER_PATTERN?: string;
 	LABELS_NEW?: string;
 	LABEL_AWAITING_REPLY?: string;
+	LABEL_ANSWER_OWED?: string;
 	LABEL_TO_ACKNOWLEDGE?: string;
 	LABEL_AWAITING_REPORTER?: string;
 	LABEL_SPAM?: string;
