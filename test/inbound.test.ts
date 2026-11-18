@@ -202,6 +202,14 @@ describe("inbound labels and state", () => {
 		expect(app.github.issue(1).labels.has("needs-reply")).toBe(false);
 	});
 
+	it("doesn't take a request to suppress auto-replies for an automatic message", async () => {
+		const app = makeApp();
+		await receive(app, { headers: { "X-Auto-Response-Suppress": "DR, OOF, AutoReply" } });
+
+		expect(app.github.issue(1).body).not.toContain("Automatic message");
+		expect(app.github.issue(1).labels.has("needs-reply")).toBe(true);
+	});
+
 	it("adds the awaiting-reply label when the reporter writes again", async () => {
 		const app = makeApp();
 		await receive(app, { messageId: "root@example.org" });

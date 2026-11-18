@@ -73,7 +73,9 @@ function isAutomatic(headers: Header[]): boolean {
 		return true;
 	}
 
-	return ["x-autoreply", "x-autorespond", "x-auto-response-suppress"].some((name) => null !== header(headers, name));
+	// X-Auto-Response-Suppress is not a sign: it asks for no auto-reply, and some list
+	// servers add it to every message they relay.
+	return ["x-autoreply", "x-autorespond"].some((name) => null !== header(headers, name));
 }
 
 // Lists that rewrite From to pass DMARC keep the author elsewhere.
