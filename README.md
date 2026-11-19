@@ -54,8 +54,10 @@ authentication:
 ```
 
 `raw_message` is the R2 key of the raw message, and `authentication` has the results of the
-receiving server. The address of the sender is where the replies go, so a failed or missing DMARC
-result is also flagged with a visible warning. An automatic message has `automatic: true`.
+receiving server. The address of the sender is where the replies go, so a visible warning flags a
+failed or missing DMARC result. Many domains publish no DMARC policy at all (`dmarc: "none"`).
+Such a message is only flagged when neither a DKIM signature nor the SPF check of the domain of the
+sender passed. An automatic message has `automatic: true`.
 
 Then comes the text of the message. In a reply, the quoted history and the footer of the list are
 removed, and the full text stays available in a collapsed block.

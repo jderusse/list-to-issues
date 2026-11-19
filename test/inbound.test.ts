@@ -206,6 +206,33 @@ describe("inbound body", () => {
 			expect(app.github.issue(number).body).toContain("> :warning: The receiving server gave no authentication result for this message.");
 		}
 	});
+
+	it("doesn't warn when the domain of the sender signed a message without having a DMARC policy", async () => {
+		const app = makeApp();
+		const signed = [
+			// Relayed by a list: the list signs too, and the envelope is the one of the list
+			"mx.cloudflare.net; dkim=pass header.d=lists.example.net header.s=s1; dkim=pass header.d=example.org header.s=s2; dmarc=none header.from=example.org policy.dmarc=none; spf=pass (mx.cloudflare.net: domain of x; designates y) smtp.mailfrom=\"list+SRS=a=b=example.org=reporter@example.net\"",
+			// Signed by a subdomain
+			"mx.cloudflare.net; dkim=pass header.d=mail.example.org; dmarc=none; spf=none",
+			// Not signed, but sent from a server of the domain of the sender
+			"mx.cloudflare.net; dkim=none; dmarc=none header.from=example.org; spf=pass smtp.mailfrom=bounces@mail.example.org",
+		];
+		const unsigned = [
+			"mx.cloudflare.net; dkim=pass header.d=relay.example.net; dmarc=none header.from=example.org; spf=pass smtp.mailfrom=x@relay.example.net",
+			"mx.cloudflare.net; dkim=pass header.d=notexample.org; dmarc=none header.from=example.org; spf=none",
+			"mx.cloudflare.net; dkim=fail header.d=example.org; dmarc=none header.from=example.org; spf=fail smtp.mailfrom=reporter@example.org",
+		];
+		for (const [index, auth] of [...signed, ...unsigned].entries()) {
+			await receive(app, { messageId: `auth-${index}@example.org`, auth });
+		}
+
+		for (let number = 1; number <= signed.length; number++) {
+			expect(app.github.issue(number).body, `signed ${number}`).not.toContain(":warning:");
+		}
+		for (let number = signed.length + 1; number <= signed.length + unsigned.length; number++) {
+			expect(app.github.issue(number).body, `unsigned ${number}`).toContain("> :warning: The address of the sender can't be verified. Its domain publishes no DMARC policy, and this message isn't signed by it.");
+		}
+	});
 });
 
 describe("ignored senders", () => {

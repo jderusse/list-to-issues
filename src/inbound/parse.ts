@@ -19,6 +19,9 @@ export interface AuthResults {
 	spf: string;
 	dkim: string;
 	dmarc: string;
+	// Whether a DKIM signature or the SPF check of the domain of the sender passed. It
+	// authenticates the sender even when the domain publishes no DMARC policy.
+	aligned: boolean;
 }
 
 export interface ParsedMail {
@@ -54,14 +57,23 @@ function header(headers: Header[], name: string): string | null {
 
 // Only the header that Cloudflare prepended can be trusted: it comes first and names
 // mx.cloudflare.net. Any other one was supplied by the sender.
-function authResults(headers: Header[]): AuthResults | null {
+function authResults(headers: Header[], fromAddress: string): AuthResults | null {
 	const first = headers.find((entry) => "authentication-results" === entry.key);
 	if (!first || !/^\s*mx\.cloudflare\.net\s*;/i.test(first.value)) {
 		return null;
 	}
 	const result = (method: string): string => new RegExp(`\\b${method}=([a-z]+)`, "i").exec(first.value)?.[1]?.toLowerCase() ?? "none";
 
-	return { spf: result("spf"), dkim: result("dkim"), dmarc: result("dmarc") };
+	// Comments may contain semicolons, so they go before splitting the results
+	const parts = first.value.replace(/\([^()]*\)/g, " ").split(";").map((part) => part.trim().toLowerCase());
+	const property = (part: string, name: string): string => new RegExp(`\\b${name.replace(".", "\\.")}=("?)([^\\s";]+)\\1`).exec(part)?.[2] ?? "";
+	const fromDomain = property(parts.find((part) => part.startsWith("dmarc=")) ?? "", "header.from") || domainOf(fromAddress);
+	const isAligned = (domain: string): boolean => "" !== domain && "" !== fromDomain
+		&& (domain === fromDomain || domain.endsWith(`.${fromDomain}`) || fromDomain.endsWith(`.${domain}`));
+	const aligned = parts.some((part) => (part.startsWith("dkim=pass") && isAligned(property(part, "header.d")))
+		|| (part.startsWith("spf=pass") && isAligned(domainOf(property(part, "smtp.mailfrom")))));
+
+	return { spf: result("spf"), dkim: result("dkim"), dmarc: result("dmarc"), aligned };
 }
 
 function isAutomatic(headers: Header[]): boolean {
@@ -112,7 +124,7 @@ export async function parseMail(raw: ArrayBuffer, cfg: Config): Promise<ParsedMa
 		recipients: [...toAddresses(mail.to), ...toAddresses(mail.cc)],
 		text: normalizeNewlines(text).trim(),
 		automatic: isAutomatic(mail.headers),
-		auth: authResults(mail.headers),
+		auth: authResults(mail.headers, toAddresses(mail.from ? [mail.from] : [])[0]?.address ?? ""),
 		echo: header(mail.headers, ECHO_HEADER)?.trim() ?? null,
 		attachments: mail.attachments.map((attachment) => ({
 			filename: attachment.filename ?? "",

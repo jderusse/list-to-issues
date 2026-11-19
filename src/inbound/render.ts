@@ -62,8 +62,12 @@ function headerBlock(mail: ParsedMail, r2Key: string): string {
 		notes.push("> :warning: The receiving server gave no authentication result for this message.");
 	} else {
 		lines.push("authentication:", `  spf: ${JSON.stringify(mail.auth.spf)}`, `  dkim: ${JSON.stringify(mail.auth.dkim)}`, `  dmarc: ${JSON.stringify(mail.auth.dmarc)}`);
-		if ("pass" !== mail.auth.dmarc) {
-			// Replies go to the address of the sender, so this must be visible
+		// Replies go to the address of the sender, so this must be visible
+		if ("none" === mail.auth.dmarc) {
+			if (!mail.auth.aligned) {
+				notes.push("> :warning: The address of the sender can't be verified. Its domain publishes no DMARC policy, and this message isn't signed by it.");
+			}
+		} else if ("pass" !== mail.auth.dmarc) {
 			notes.push(`> :warning: The sender of this message is not authenticated (DMARC ${mail.auth.dmarc}).`);
 		}
 	}
